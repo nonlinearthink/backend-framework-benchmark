@@ -5,13 +5,46 @@
   <title>Benchmark Compare</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    :root {
+      color-scheme: dark;
+      --bg: #0c0e12;
+      --surface: #161a22;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --border: #2a3140;
+      --warn-bg: #2a2410;
+      --warn-border: #5c4a14;
+      --warn-text: #f0d78c;
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 960px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: var(--bg);
+      color: var(--text);
+    }
+    h1 { font-weight: 600; letter-spacing: -0.02em; }
+    code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.35em;
+      font-size: 0.9em;
+    }
+    #file-hint {
+      padding: 1rem;
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      border-radius: 8px;
+      color: var(--warn-text);
+    }
     canvas { margin-bottom: 2rem; }
   </style>
 </head>
 <body>
   <h1>Plaintext 30s</h1>
-  <p id="file-hint" hidden style="padding: 1rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;">
+  <p id="file-hint" hidden>
     无法通过 <code>file://</code> 加载 JSON（浏览器 CORS 限制）。请在仓库根目录运行
     <code>bun run compare</code>，然后在打开的 <code>http://127.0.0.1:3456/compare.html</code> 中查看。
   </p>
@@ -20,16 +53,53 @@
   <canvas id="histogram"></canvas>
   <script>
     const FRAMEWORKS = [
-      { name: "Elysia", file: "elysia-plaintext-30s.json" },
-      { name: "Hono", file: "hono-plaintext-30s.json" },
-      { name: "NestJS", file: "nestjs-plaintext-30s.json" },
+      { name: "Elysia (Bun)", file: "elysia-plaintext-30s.json" },
+      { name: "Hono (Bun)", file: "hono-plaintext-30s.json" },
+      { name: "NestJS (Bun)", file: "nestjs-plaintext-30s.json" },
+      { name: "NestJS (Node)", file: "nestjs-node-plaintext-30s.json" },
     ];
 
     const COLORS = [
-      "rgba(54, 162, 235, 0.8)",
-      "rgba(255, 99, 132, 0.8)",
-      "rgba(75, 192, 192, 0.8)",
+      "rgba(192, 132, 252, 0.85)",
+      "rgba(255, 87, 51, 0.85)",
+      "rgba(244, 114, 182, 0.85)",
+      "rgba(251, 191, 36, 0.85)",
     ];
+
+    const BORDER_COLORS = [
+      "rgb(192, 132, 252)",
+      "rgb(255, 87, 51)",
+      "rgb(244, 114, 182)",
+      "rgb(251, 191, 36)",
+    ];
+
+    const chartText = "#e8eaed";
+    const chartMuted = "#9aa0a6";
+    const chartGrid = "rgba(255, 255, 255, 0.08)";
+
+    function chartOptions(title, yLabel) {
+      const scale = {
+        ticks: { color: chartMuted },
+        grid: { color: chartGrid },
+        border: { color: chartGrid },
+      };
+      return {
+        color: chartText,
+        plugins: {
+          title: { display: true, text: title, color: chartText },
+          legend: { labels: { color: chartText } },
+        },
+        scales: {
+          x: scale,
+          y: {
+            ...scale,
+            title: yLabel
+              ? { display: true, text: yLabel, color: chartMuted }
+              : undefined,
+          },
+        },
+      };
+    }
 
     async function load(file) {
       const r = await fetch(file);
@@ -71,9 +141,7 @@
             },
           ],
         },
-        options: {
-          plugins: { title: { display: true, text: "Throughput (RPS)" } },
-        },
+        options: chartOptions("Throughput (RPS)"),
       });
 
       const keys = ["p50", "p75", "p90", "p95", "p99"];
@@ -87,10 +155,7 @@
             backgroundColor: COLORS[i],
           })),
         },
-        options: {
-          plugins: { title: { display: true, text: "Latency percentiles" } },
-          scales: { y: { title: { display: true, text: "ms" } } },
-        },
+        options: chartOptions("Latency percentiles", "ms"),
       });
 
       const histKeys = mergedHistogramLabels(results);
@@ -103,15 +168,13 @@
           datasets: results.map((r, i) => ({
             label: r.name,
             data: histKeys.map((k) => r.data.responseTimeHistogram[k] ?? 0),
-            borderColor: COLORS[i],
-            backgroundColor: COLORS[i],
+            borderColor: BORDER_COLORS[i],
+            backgroundColor: COLORS[i].replace("0.85", "0.25"),
+            fill: true,
             tension: 0.2,
           })),
         },
-        options: {
-          plugins: { title: { display: true, text: "Response time distribution" } },
-          scales: { y: { title: { display: true, text: "requests" } } },
-        },
+        options: chartOptions("Response time distribution", "requests"),
       });
     })();
   </script>

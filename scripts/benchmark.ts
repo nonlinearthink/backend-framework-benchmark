@@ -2,6 +2,7 @@ const benchmarks = [
   { name: "elysia", port: 8080 },
   { name: "hono", port: 8081 },
   { name: "nestjs", port: 8082 },
+  { name: "nestjs-node", port: 8083 },
 ] as const;
 
 const ohaBaseArgs = [

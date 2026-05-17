@@ -22,8 +22,9 @@ Install these tools before running the benchmark:
    - `apps/elysia/`
    - `apps/hono/`
    - `apps/nestjs/`
+   - `apps/nestjs-node/`
 
-   Default ports: `elysia` 8080, `hono` 8081, `nestjs` 8082.
+   Default ports: `elysia` 8080, `hono` 8081, `nestjs` 8082, `nestjs-node` 8083.
 
 3. Build all apps from the repository root:
 
@@ -31,7 +32,7 @@ Install these tools before running the benchmark:
    bun run build
    ```
 
-4. Start all three apps from the repository root and wait until each port responds:
+4. Start all apps from the repository root and wait until each port responds:
 
    ```bash
    bun run start
