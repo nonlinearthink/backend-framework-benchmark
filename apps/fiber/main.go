@@ -26,7 +26,7 @@ func main() {
 	app := fiber.New(fiber.Config{
 		Prefork:               prefork,
 		DisableStartupMessage: true,
-		Immutable:             true,
+		Immutable:             false,
 	})
 
 	app.Get("/", func(c *fiber.Ctx) error {

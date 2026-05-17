@@ -6,6 +6,6 @@
         "module": "Preserve",
         "moduleDetection": "force",
         "emitDecoratorMetadata": true,
-        "experimentalDecorators": true,
+        "experimentalDecorators": true
     }
 }

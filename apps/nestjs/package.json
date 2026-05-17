@@ -6,7 +6,7 @@
     "module": "src/main.ts",
     "scripts": {
         "check": "biome check --write",
-        "build": "bun run scripts/build.ts",    
+        "build": "bun run scripts/build.ts",
         "dev": "bun run src/main.ts",
         "start": "bun run dist/main.js"
     },

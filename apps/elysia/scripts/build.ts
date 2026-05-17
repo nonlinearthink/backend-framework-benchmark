@@ -3,7 +3,7 @@ import path from "node:path";
 
 const pkgRoot = path.join(import.meta.dir, "..");
 const distDir = path.join(pkgRoot, "dist");
-const entry = path.join(pkgRoot, "src/index.ts");  
+const entry = path.join(pkgRoot, "src/index.ts");
 
 await rm(distDir, { recursive: true, force: true });
 
