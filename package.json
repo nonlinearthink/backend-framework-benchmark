@@ -1,0 +1,34 @@
+{
+    "name": "backend-framework-benchmark",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": ">=22"
+    },
+    "packageManager": "bun@1.3.13",
+    "scripts": {
+        "check": "turbo run check",
+        "typecheck": "turbo run typecheck",
+        "build": "turbo run build",
+        "dev": "turbo run dev",
+        "start": "turbo run start",
+        "benchmark": "bun run scripts/benchmark.ts",
+        "compare": "bun run scripts/serve-compare.ts"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "~2.4.15",
+        "@types/bun": "^1.3.14",
+        "turbo": "~2.9.14",
+        "typescript": "~6.0.3"
+    },
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "browserslist": [
+        "defaults",
+        "chrome >= 80",
+        "ios >= 10",
+        "android >= 8"
+    ]
+}

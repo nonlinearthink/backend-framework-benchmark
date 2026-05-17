@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>Benchmark Compare</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    canvas { margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Plaintext 30s</h1>
+  <p id="file-hint" hidden style="padding: 1rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;">
+    无法通过 <code>file://</code> 加载 JSON（浏览器 CORS 限制）。请在仓库根目录运行
+    <code>bun run compare</code>，然后在打开的 <code>http://127.0.0.1:3456/compare.html</code> 中查看。
+  </p>
+  <canvas id="rps"></canvas>
+  <canvas id="percentiles"></canvas>
+  <canvas id="histogram"></canvas>
+  <script>
+    const FRAMEWORKS = [
+      { name: "Elysia", file: "elysia-plaintext-30s.json" },
+      { name: "Hono", file: "hono-plaintext-30s.json" },
+      { name: "NestJS", file: "nestjs-plaintext-30s.json" },
+    ];
+
+    const COLORS = [
+      "rgba(54, 162, 235, 0.8)",
+      "rgba(255, 99, 132, 0.8)",
+      "rgba(75, 192, 192, 0.8)",
+    ];
+
+    async function load(file) {
+      const r = await fetch(file);
+      return r.json();
+    }
+
+    function mergedHistogramLabels(results) {
+      const keys = new Set();
+      for (const { data } of results) {
+        for (const k of Object.keys(data.responseTimeHistogram)) {
+          keys.add(k);
+        }
+      }
+      return [...keys].sort((a, b) => Number(a) - Number(b));
+    }
+
+    (async () => {
+      if (location.protocol === "file:") {
+        document.getElementById("file-hint").hidden = false;
+        return;
+      }
+
+      const results = await Promise.all(
+        FRAMEWORKS.map(async (fw) => ({
+          ...fw,
+          data: await load(fw.file),
+        }))
+      );
+
+      new Chart(document.getElementById("rps"), {
+        type: "bar",
+        data: {
+          labels: results.map((r) => r.name),
+          datasets: [
+            {
+              label: "Requests/sec",
+              data: results.map((r) => r.data.summary.requestsPerSec),
+              backgroundColor: COLORS,
+            },
+          ],
+        },
+        options: {
+          plugins: { title: { display: true, text: "Throughput (RPS)" } },
+        },
+      });
+
+      const keys = ["p50", "p75", "p90", "p95", "p99"];
+      new Chart(document.getElementById("percentiles"), {
+        type: "bar",
+        data: {
+          labels: keys,
+          datasets: results.map((r, i) => ({
+            label: `${r.name} (ms)`,
+            data: keys.map((k) => r.data.latencyPercentiles[k] * 1000),
+            backgroundColor: COLORS[i],
+          })),
+        },
+        options: {
+          plugins: { title: { display: true, text: "Latency percentiles" } },
+          scales: { y: { title: { display: true, text: "ms" } } },
+        },
+      });
+
+      const histKeys = mergedHistogramLabels(results);
+      const histLabels = histKeys.map((k) => `${(Number(k) * 1000).toFixed(2)} ms`);
+
+      new Chart(document.getElementById("histogram"), {
+        type: "line",
+        data: {
+          labels: histLabels,
+          datasets: results.map((r, i) => ({
+            label: r.name,
+            data: histKeys.map((k) => r.data.responseTimeHistogram[k] ?? 0),
+            borderColor: COLORS[i],
+            backgroundColor: COLORS[i],
+            tension: 0.2,
+          })),
+        },
+        options: {
+          plugins: { title: { display: true, text: "Response time distribution" } },
+          scales: { y: { title: { display: true, text: "requests" } } },
+        },
+      });
+    })();
+  </script>
+</body>
+</html>

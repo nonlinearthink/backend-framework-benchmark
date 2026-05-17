@@ -1,0 +1,70 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json", 
+    "root": true,
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "a11y": {
+                "useKeyWithClickEvents": "warn",
+                "useSemanticElements": "warn",
+                "useFocusableInteractive": "warn",
+                "useAriaPropsForRole": "warn"
+            },
+            "correctness": {
+                "noNestedComponentDefinitions": "warn"
+            },
+            "style": {
+                "useComponentExportOnlyModules": "warn"
+            },
+            "suspicious": {
+                "noArrayIndexKey": "warn"
+            }
+        }
+    },
+    "formatter": {
+        "enabled": true,
+        "includes": [
+            "**",
+            "!**/node_modules",
+            "!**/package-lock.json",
+            "!**/pnpm-lock.yaml",
+            "!**/.next",
+            "!**/next-env.d.ts",
+            "!**/.turbo",
+            "!**/prisma",
+            "!**/public"
+        ],
+        "indentStyle": "space",
+        "indentWidth": 2,
+        "lineEnding": "lf",
+        "bracketSpacing": true
+    },
+    "assist": {
+        "enabled": true,
+        "actions": {
+            "source": {
+                "organizeImports": "on"
+            }
+        }
+    },
+    "javascript": {
+        "parser": {
+            "unsafeParameterDecoratorsEnabled": true
+        },
+        "formatter": {
+            "quoteStyle": "double",
+            "jsxQuoteStyle": "double",
+            "quoteProperties": "asNeeded",
+            "trailingCommas": "es5"
+        }
+    },
+    "css": {
+        "parser": {
+            "tailwindDirectives": true
+        }
+    },
+    "overrides": [
+        { "includes": ["**/*.json"], "formatter": { "indentWidth": 4 } }
+    ]
+}

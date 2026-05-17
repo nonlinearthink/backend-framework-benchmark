@@ -1,0 +1,11 @@
+# Local env files
+.env
+
+# Node.js Toolchains
+.turbo/
+
+# Node.js Dependencies
+node_modules/
+
+# Node.js Builds
+dist/

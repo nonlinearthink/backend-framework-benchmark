@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "lib": ["ESNext"],
+        "target": "ESNext",
+        "module": "Preserve",
+        "moduleDetection": "force",
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+    }
+}

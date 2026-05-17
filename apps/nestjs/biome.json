@@ -1,0 +1,21 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+    "extends": "//",
+    "formatter": {
+        "includes": ["**", "!dist/**", "!node_modules/**"]
+    },
+    "linter": {
+        "rules": {
+            "complexity": {
+                "noStaticOnlyClass": "off"
+            },
+            "style": {
+                "useImportType": "off"
+            }
+        },
+        "includes": ["**", "!dist/**", "!node_modules/**"]
+    },
+    "assist": {
+        "includes": ["**", "!dist/**", "!node_modules/**"]
+    }
+}
