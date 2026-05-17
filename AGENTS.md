@@ -7,6 +7,7 @@ Install these tools before running the benchmark:
 | Tool | Doc |
 |------|-----|
 | [Bun](https://bun.com/) | [docs/install-bun.md](docs/install-bun.md) |
+| [Go](https://go.dev/) | [docs/install-go.md](docs/install-go.md) |
 | [oha](https://github.com/hatoo/oha) | [docs/install-oha.md](docs/install-oha.md) |
 
 ## Usage
@@ -23,8 +24,10 @@ Install these tools before running the benchmark:
    - `apps/hono/`
    - `apps/nestjs/`
    - `apps/nestjs-node/`
+   - `apps/fiber/`
+   - `apps/gin/`
 
-   Default ports: `elysia` 8080, `hono` 8081, `nestjs` 8082, `nestjs-node` 8083.
+   Default ports: `elysia` 8080, `hono` 8081, `nestjs` 8082, `nestjs-node` 8083, `fiber` 8084, `gin` 8085.
 
 3. Build all apps from the repository root:
 

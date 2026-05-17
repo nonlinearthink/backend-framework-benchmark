@@ -3,6 +3,8 @@ const benchmarks = [
   { name: "hono", port: 8081 },
   { name: "nestjs", port: 8082 },
   { name: "nestjs-node", port: 8083 },
+  { name: "fiber", port: 8084 },
+  { name: "gin", port: 8085 },
 ] as const;
 
 const ohaBaseArgs = [

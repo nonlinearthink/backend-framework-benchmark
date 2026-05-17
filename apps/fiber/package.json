@@ -1,0 +1,11 @@
+{
+    "name": "fiber",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "install": "go mod tidy",
+        "build": "bun run scripts/build.ts",
+        "dev": "go run .",
+        "start": "bun run scripts/start.ts"
+    }
+}
