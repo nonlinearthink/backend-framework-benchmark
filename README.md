@@ -13,7 +13,7 @@
 
 Results land in `results/*.json`. Compare runs with `bun run compare` (local HTTP server; opening `compare.html` directly via `file://` will not load the JSON files).
 
-## Vibe benchmark
+## Run Benchmark
 
 ### Prompt (for Claude Code, Cursor)
 
@@ -21,10 +21,10 @@ Results land in `results/*.json`. Compare runs with `bun run compare` (local HTT
 
 ---
 
-## Human instruction
+### Human instruction
 
 Setup and usage: [AGENTS.md](AGENTS.md).
 
-## Result
+### Result
 
 ![Throughput (RPS)](results/screenshot.png)

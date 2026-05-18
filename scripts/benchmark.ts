@@ -1,34 +1,61 @@
 import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const benchmarks = [
-  { name: "elysia", port: 8080 },
-  { name: "hono", port: 8081 },
-  { name: "nestjs", port: 8082 },
-  { name: "nestjs-node", port: 8083 },
-  { name: "fiber", port: 8084 },
-  { name: "gin", port: 8085 },
+  { name: "elysia", label: "Elysia (Bun)" },
+  { name: "hono", label: "Hono (Bun)" },
+  { name: "nestjs", label: "NestJS (Bun)" },
+  { name: "nestjs-node", label: "NestJS (Node)" },
+  { name: "fiber", label: "Fiber (Go)" },
+  { name: "gin", label: "Gin (Go)" },
 ] as const;
 
+// All Docker images listen on 8080 inside the container (see apps/<name>/Dockerfile).
+const containerPort = 8080;
+const hostPort = Number(process.env.BENCHMARK_HOST_PORT ?? containerPort);
+const benchmarkUrl = `http://127.0.0.1:${hostPort}/`;
+
+const benchmarkDuration = process.env.BENCHMARK_DURATION ?? "30s";
+const warmupDuration = process.env.BENCHMARK_WARMUP_DURATION ?? "5s";
+
+const connectionLevels: number[] = (
+  process.env.BENCHMARK_CONNECTIONS ?? "50,100,150,200,250,300,350,400"
+)
+  .split(",")
+  .map((s) => Number(s.trim()))
+  .filter((n) => Number.isFinite(n) && n > 0);
+
+if (connectionLevels.length === 0) {
+  console.error("BENCHMARK_CONNECTIONS must list at least one positive integer");
+  process.exit(1);
+}
+
 const ohaBaseArgs = [
-  "-z",
-  "30s",
-  "-c",
-  "200",
   "--no-tui",
   "--disable-keepalive",
-  "--latency-correction",
   "--output-format",
   "json",
 ] as const;
 
-const intervalMs = 30_000;
-const readyTimeoutMs = 60_000;
+const warmupMs = 10_000;
+const concurrencySettleMs = Number(process.env.BENCHMARK_SETTLE_MS ?? 3_000);
+const frameworkIntervalMs = 10_000;
+
+const dockerImagePrefix =
+  process.env.BENCHMARK_IMAGE_PREFIX ?? "backend-framework-benchmark";
+const dockerImageTag = process.env.BENCHMARK_IMAGE_TAG ?? "latest";
+
 const scriptsDir = import.meta.dir;
 const repoRoot = path.join(scriptsDir, "..");
 const resultsDir = path.join(repoRoot, "results");
 
-type ServerProcess = ReturnType<typeof Bun.spawn>;
+type OhaResult = {
+  summary: {
+    requestsPerSec: number;
+    successRate: number;
+  };
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -41,132 +68,146 @@ function ohaEnv(): Record<string, string | undefined> {
   return env;
 }
 
-function killListenersOnPort(port: number): void {
-  if (process.platform === "win32") {
-    const out = spawnSync("netstat", ["-ano"], { encoding: "utf8" });
-    const pids = new Set<string>();
-    for (const line of out.stdout?.split("\n") ?? []) {
-      if (!line.includes(`:${port}`) || !line.includes("LISTENING")) continue;
-      const pid = line.trim().split(/\s+/).pop();
-      if (pid) pids.add(pid);
-    }
-    for (const pid of pids) {
-      spawnSync("taskkill", ["/F", "/PID", pid]);
-    }
-    return;
-  }
+function resultFileName(name: string, connections: number): string {
+  return `${name}-plaintext-${benchmarkDuration}-c${connections}.json`;
+}
 
-  const out = spawnSync("lsof", ["-ti", `TCP:${port}`, "-sTCP:LISTEN"], {
-    encoding: "utf8",
-  });
-  for (const pid of out.stdout?.trim().split("\n").filter(Boolean) ?? []) {
-    spawnSync("kill", ["-9", pid]);
+function ohaArgs(connections: number): string[] {
+  return ["-z", benchmarkDuration, "-c", String(connections), ...ohaBaseArgs];
+}
+
+function containerName(name: string): string {
+  return `benchmark-${name}`;
+}
+
+function dockerImage(name: string): string {
+  return `${dockerImagePrefix}/${name}:${dockerImageTag}`;
+}
+
+function runDocker(args: string[], label: string): void {
+  const result = spawnSync("docker", args, { stdio: "inherit", encoding: "utf8" });
+  if (result.status !== 0) {
+    console.error(`[${label}] docker ${args.join(" ")} failed`);
+    process.exit(result.status ?? 1);
   }
 }
 
-async function readStream(stream: ServerProcess["stderr"]): Promise<string> {
-  if (stream == null || typeof stream === "number") return "";
-  return new Response(stream).text();
+function removeContainer(name: string): void {
+  spawnSync("docker", ["rm", "-f", containerName(name)], { stdio: "pipe" });
 }
 
-async function waitForReady(
-  port: number,
-  label: string,
-  server: ServerProcess,
-): Promise<void> {
-  const deadline = Date.now() + readyTimeoutMs;
+function startContainer(name: string): void {
+  const image = dockerImage(name);
+  removeContainer(name);
 
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null) {
-      const stderr = await readStream(server.stderr);
-      throw new Error(
-        `[${label}] server exited with code ${server.exitCode}${stderr ? `:\n${stderr}` : ""}`,
-      );
-    }
-
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/`, {
-        signal: AbortSignal.timeout(1_000),
-      });
-      if (res.ok) {
-        console.log(`[${label}] ready on :${port}`);
-        return;
-      }
-    } catch {
-      // retry
-    }
-
-    await sleep(500);
-  }
-
-  const stderr = await readStream(server.stderr);
-  throw new Error(
-    `[${label}] timed out waiting for http://127.0.0.1:${port}/${stderr ? `:\n${stderr}` : ""}`,
+  console.log(`[${name}] docker run -p ${hostPort}:${containerPort} ${image}`);
+  runDocker(
+    [
+      "run",
+      "-d",
+      "--name",
+      containerName(name),
+      "-p",
+      `${hostPort}:${containerPort}`,
+      image,
+    ],
+    name,
   );
 }
 
-function startServer(name: string): ServerProcess {
-  console.log(`[${name}] bun run start --filter ${name}`);
-  return Bun.spawn(["bun", "run", "start", "--filter", name], {
-    cwd: repoRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  });
+function stopContainer(name: string): void {
+  console.log(`[${name}] stopping container…`);
+  removeContainer(name);
 }
 
-async function stopServer(server: ServerProcess, port: number, name: string): Promise<void> {
-  console.log(`[${name}] stopping server…`);
+async function execOha(
+  args: string[],
+  url: string,
+  outputPath?: string,
+): Promise<void> {
+  const fullArgs = outputPath
+    ? [...args, "-o", outputPath, url]
+    : [...args, url];
 
-  if (server.exitCode === null) {
-    server.kill("SIGTERM");
-    await Promise.race([server.exited, sleep(3_000)]);
-    if (server.exitCode === null) {
-      server.kill("SIGKILL");
-      await Promise.race([server.exited, sleep(1_000)]);
-    }
+  const oha = Bun.spawn(["oha", ...fullArgs], {
+    cwd: repoRoot,
+    stdout: outputPath ? "inherit" : "ignore",
+    stderr: "inherit",
+    env: ohaEnv(),
+  });
+
+  const exitCode = await oha.exited;
+  if (exitCode !== 0) {
+    throw new Error(`oha exited with code ${exitCode ?? 1}`);
   }
+}
 
-  killListenersOnPort(port);
-  await sleep(500);
+async function warmupAtConcurrency(connections: number): Promise<void> {
+  await execOha(
+    [
+      "-z",
+      warmupDuration,
+      "-c",
+      String(connections),
+      "--no-tui",
+      "--output-format",
+      "quiet",
+    ],
+    benchmarkUrl,
+  );
+}
+
+async function runOhaAtLevel(name: string, connections: number): Promise<void> {
+  const file = resultFileName(name, connections);
+  const output = path.join(resultsDir, file);
+
+  console.log(
+    `[${name}] c=${connections} settle ${concurrencySettleMs / 1000}s + warmup ${warmupDuration}`,
+  );
+  await sleep(concurrencySettleMs);
+  await warmupAtConcurrency(connections);
+
+  console.log(
+    `[${name}] c=${connections} oha ${benchmarkDuration} ${benchmarkUrl} → ${path.relative(repoRoot, output)}`,
+  );
+
+  await execOha(ohaArgs(connections), benchmarkUrl, output);
+
+  const result = JSON.parse(await readFile(output, "utf8")) as OhaResult;
+  console.log(
+    `[${name}] c=${connections} RPS=${result.summary.requestsPerSec.toFixed(0)} success=${(result.summary.successRate * 100).toFixed(1)}%`,
+  );
 }
 
 for (let i = 0; i < benchmarks.length; i++) {
-  const { name, port } = benchmarks[i];
-  const output = path.join(resultsDir, `${name}-plaintext-30s.json`);
-  const url = `http://127.0.0.1:${port}/`;
+  const { name } = benchmarks[i];
 
-  killListenersOnPort(port);
-  const server = startServer(name);
+  startContainer(name);
 
   try {
-    await waitForReady(port, name, server);
+    console.log(`[${name}] waiting ${warmupMs / 1000}s for container…`);
+    await sleep(warmupMs);
 
-    console.log(`[${name}] ${url} → ${path.relative(repoRoot, output)}`);
-
-    const oha = Bun.spawn(["oha", ...ohaBaseArgs, "-o", output, url], {
-      cwd: repoRoot,
-      stdout: "inherit",
-      stderr: "inherit",
-      env: ohaEnv(),
-    });
-
-    const exitCode = await oha.exited;
-    if (exitCode !== 0) {
-      process.exit(exitCode ?? 1);
+    for (const connections of connectionLevels) {
+      await runOhaAtLevel(name, connections);
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : err);
-    await stopServer(server, port, name);
+    stopContainer(name);
     process.exit(1);
   }
 
-  await stopServer(server, port, name);
+  stopContainer(name);
 
   if (i < benchmarks.length - 1) {
-    console.log(`Waiting ${intervalMs / 1000}s before next benchmark…`);
-    await sleep(intervalMs);
+    console.log(`Waiting ${frameworkIntervalMs / 1000}s before next framework…`);
+    await sleep(frameworkIntervalMs);
   }
 }
+
+const totalRuns = connectionLevels.length * benchmarks.length;
+console.log(
+  `\nDone: ${totalRuns} results (${connectionLevels.length} levels × ${benchmarks.length} frameworks, ${benchmarkDuration} each)`,
+);
 
 export {};

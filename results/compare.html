@@ -18,13 +18,14 @@
     }
     body {
       font-family: system-ui, sans-serif;
-      max-width: 960px;
+      max-width: 1100px;
       margin: 2rem auto;
       padding: 0 1rem;
       background: var(--bg);
       color: var(--text);
     }
     h1 { font-weight: 600; letter-spacing: -0.02em; }
+    h2 { font-size: 1rem; font-weight: 500; color: var(--muted); margin-top: -0.5rem; }
     code {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -43,23 +44,25 @@
   </style>
 </head>
 <body>
-  <h1>Plaintext 30s</h1>
+  <h1>Plaintext benchmark</h1>
+  <h2 id="subtitle"></h2>
   <p id="file-hint" hidden>
     无法通过 <code>file://</code> 加载 JSON（浏览器 CORS 限制）。请在仓库根目录运行
     <code>bun run compare</code>，然后在打开的 <code>http://127.0.0.1:3456/compare.html</code> 中查看。
   </p>
-  <canvas id="rps"></canvas>
-  <canvas id="percentiles"></canvas>
-  <canvas id="histogram"></canvas>
+  <canvas id="rps-vs-c"></canvas>
+  <canvas id="p99-vs-c"></canvas>
+  <canvas id="rps-at-c"></canvas>
+  <canvas id="percentiles-at-c"></canvas>
   <script>
-    const FRAMEWORKS = [
-      { name: "Elysia (Bun)", file: "elysia-plaintext-30s.json" },
-      { name: "Hono (Bun)", file: "hono-plaintext-30s.json" },
-      { name: "NestJS (Bun)", file: "nestjs-plaintext-30s.json" },
-      { name: "Fiber (Go)", file: "fiber-plaintext-30s.json" },
-      { name: "Gin (Go)", file: "gin-plaintext-30s.json" },
-      { name: "NestJS (Node)", file: "nestjs-node-plaintext-30s.json" },
-    ];
+    const FRAMEWORK_LABELS = {
+      elysia: "Elysia (Bun)",
+      hono: "Hono (Bun)",
+      nestjs: "NestJS (Bun)",
+      "nestjs-node": "NestJS (Node)",
+      fiber: "Fiber (Go)",
+      gin: "Gin (Go)",
+    };
 
     const COLORS = [
       "rgba(192, 132, 252, 0.85)",
@@ -83,7 +86,11 @@
     const chartMuted = "#9aa0a6";
     const chartGrid = "rgba(255, 255, 255, 0.08)";
 
-    function chartOptions(title, yLabel) {
+    function frameworkLabel(id) {
+      return FRAMEWORK_LABELS[id] ?? id;
+    }
+
+    function chartOptions(title, yLabel, xLabel) {
       const scale = {
         ticks: { color: chartMuted },
         grid: { color: chartGrid },
@@ -96,7 +103,12 @@
           legend: { labels: { color: chartText } },
         },
         scales: {
-          x: scale,
+          x: {
+            ...scale,
+            title: xLabel
+              ? { display: true, text: xLabel, color: chartMuted }
+              : undefined,
+          },
           y: {
             ...scale,
             title: yLabel
@@ -107,19 +119,56 @@
       };
     }
 
-    async function load(file) {
-      const r = await fetch(file);
+    async function loadJson(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
       return r.json();
     }
 
-    function mergedHistogramLabels(results) {
-      const keys = new Set();
-      for (const { data } of results) {
-        for (const k of Object.keys(data.responseTimeHistogram)) {
-          keys.add(k);
+    function buildSeries(files, allData) {
+      const byFramework = new Map();
+
+      for (const entry of files) {
+        const key = entry.framework;
+        if (!byFramework.has(key)) {
+          byFramework.set(key, {
+            label: frameworkLabel(key),
+            points: [],
+          });
+        }
+        byFramework.get(key).points.push({
+          connections: entry.connections,
+          duration: entry.duration,
+          data: allData.get(entry.file),
+        });
+      }
+
+      for (const entry of byFramework.values()) {
+        entry.points.sort((a, b) => a.connections - b.connections);
+      }
+
+      return [...byFramework.entries()].map(([id, { label, points }], i) => ({
+        id,
+        label,
+        color: COLORS[i % COLORS.length],
+        borderColor: BORDER_COLORS[i % BORDER_COLORS.length],
+        points,
+      }));
+    }
+
+    function connectionLevelsFromSeries(series) {
+      const levels = new Set();
+      for (const s of series) {
+        for (const p of s.points) {
+          levels.add(p.connections);
         }
       }
-      return [...keys].sort((a, b) => Number(a) - Number(b));
+      return [...levels].sort((a, b) => a - b);
+    }
+
+    function valueAt(series, connections, pick) {
+      const point = series.points.find((p) => p.connections === connections);
+      return point ? pick(point.data) : null;
     }
 
     (async () => {
@@ -128,61 +177,131 @@
         return;
       }
 
-      const results = await Promise.all(
-        FRAMEWORKS.map(async (fw) => ({
-          ...fw,
-          data: await load(fw.file),
-        }))
+      const { files } = await loadJson("/api/benchmarks.json");
+      if (files.length === 0) {
+        throw new Error("results/ 下没有匹配的 benchmark JSON（*-plaintext-*-c*.json）");
+      }
+
+      const allData = new Map(
+        await Promise.all(
+          files.map(async (entry) => [entry.file, await loadJson(entry.file)]),
+        ),
       );
 
-      new Chart(document.getElementById("rps"), {
-        type: "bar",
-        data: {
-          labels: results.map((r) => r.name),
-          datasets: [
-            {
-              label: "Requests/sec",
-              data: results.map((r) => r.data.summary.requestsPerSec),
-              backgroundColor: COLORS,
-            },
-          ],
-        },
-        options: chartOptions("Throughput (RPS)"),
-      });
+      const series = buildSeries(files, allData);
+      const connectionLevels = connectionLevelsFromSeries(series);
+      const defaultC =
+        connectionLevels[Math.floor(connectionLevels.length / 2)] ??
+        connectionLevels.at(-1);
 
-      const keys = ["p50", "p75", "p90", "p95", "p99"];
-      new Chart(document.getElementById("percentiles"), {
-        type: "bar",
-        data: {
-          labels: keys,
-          datasets: results.map((r, i) => ({
-            label: `${r.name} (ms)`,
-            data: keys.map((k) => r.data.latencyPercentiles[k] * 1000),
-            backgroundColor: COLORS[i],
-          })),
-        },
-        options: chartOptions("Latency percentiles", "ms"),
-      });
+      const durations = [...new Set(files.map((f) => f.duration))];
+      const durationText =
+        durations.length === 1 ? durations[0] : durations.join(", ");
 
-      const histKeys = mergedHistogramLabels(results);
-      const histLabels = histKeys.map((k) => `${(Number(k) * 1000).toFixed(2)} ms`);
+      document.getElementById("subtitle").textContent =
+        `${files.length} runs · duration ${durationText} · concurrency ${connectionLevels.join(" / ")}`;
 
-      new Chart(document.getElementById("histogram"), {
+      new Chart(document.getElementById("rps-vs-c"), {
         type: "line",
         data: {
-          labels: histLabels,
-          datasets: results.map((r, i) => ({
-            label: r.name,
-            data: histKeys.map((k) => r.data.responseTimeHistogram[k] ?? 0),
-            borderColor: BORDER_COLORS[i],
-            backgroundColor: COLORS[i].replace("0.85", "0.25"),
-            fill: true,
-            tension: 0.2,
+          labels: connectionLevels.map(String),
+          datasets: series.map((s) => ({
+            label: s.label,
+            data: connectionLevels.map((c) =>
+              valueAt(s, c, (d) => d.summary.requestsPerSec),
+            ),
+            borderColor: s.borderColor,
+            backgroundColor: s.color.replace("0.85", "0.25"),
+            tension: 0.15,
+            spanGaps: true,
           })),
         },
-        options: chartOptions("Response time distribution", "requests"),
+        options: chartOptions("Throughput vs concurrency", "requests/sec", "connections (-c)"),
       });
-    })();
+
+      new Chart(document.getElementById("p99-vs-c"), {
+        type: "line",
+        data: {
+          labels: connectionLevels.map(String),
+          datasets: series.map((s) => ({
+            label: `${s.label} p99 (ms)`,
+            data: connectionLevels.map((c) =>
+              valueAt(s, c, (d) => d.latencyPercentiles.p99 * 1000),
+            ),
+            borderColor: s.borderColor,
+            backgroundColor: s.color.replace("0.85", "0.25"),
+            tension: 0.15,
+            spanGaps: true,
+          })),
+        },
+        options: chartOptions("p99 latency vs concurrency", "ms", "connections (-c)"),
+      });
+
+      function renderAtC(connections) {
+        const atC = series
+          .map((s) => {
+            const point = s.points.find((p) => p.connections === connections);
+            return point ? { ...s, data: point.data } : null;
+          })
+          .filter(Boolean);
+
+        const rpsChart = Chart.getChart(document.getElementById("rps-at-c"));
+        const pctChart = Chart.getChart(document.getElementById("percentiles-at-c"));
+        if (rpsChart) rpsChart.destroy();
+        if (pctChart) pctChart.destroy();
+
+        new Chart(document.getElementById("rps-at-c"), {
+          type: "bar",
+          data: {
+            labels: atC.map((r) => r.label),
+            datasets: [
+              {
+                label: "Requests/sec",
+                data: atC.map((r) => r.data.summary.requestsPerSec),
+                backgroundColor: atC.map((r) => r.color),
+              },
+            ],
+          },
+          options: chartOptions(`Throughput at c=${connections}`),
+        });
+
+        const keys = ["p50", "p75", "p90", "p95", "p99"];
+        new Chart(document.getElementById("percentiles-at-c"), {
+          type: "bar",
+          data: {
+            labels: keys,
+            datasets: atC.map((r, i) => ({
+              label: `${r.label} (ms)`,
+              data: keys.map((k) => r.data.latencyPercentiles[k] * 1000),
+              backgroundColor: COLORS[i % COLORS.length],
+            })),
+          },
+          options: chartOptions(`Latency percentiles at c=${connections}`, "ms"),
+        });
+      }
+
+      const slider = document.createElement("label");
+      slider.style.display = "block";
+      slider.style.marginBottom = "1rem";
+      slider.style.color = chartMuted;
+      slider.innerHTML =
+        `Snapshot concurrency: <input type="range" id="c-slider" min="0" max="${connectionLevels.length - 1}" value="${Math.max(0, connectionLevels.indexOf(defaultC))}" step="1" /> <strong id="c-value">${defaultC}</strong>`;
+      document.getElementById("rps-at-c").before(slider);
+
+      const cSlider = document.getElementById("c-slider");
+      const cValue = document.getElementById("c-value");
+      cSlider.addEventListener("input", () => {
+        const connections = connectionLevels[Number(cSlider.value)];
+        cValue.textContent = String(connections);
+        renderAtC(connections);
+      });
+
+      renderAtC(defaultC);
+    })().catch((err) => {
+      document.getElementById("file-hint").hidden = false;
+      document.getElementById("file-hint").textContent =
+        `加载失败: ${err.message}。请先运行 bun run compare，并确保 results/ 中有 *-plaintext-*-c*.json。`;
+    });
   </script>
 </body>
 </html>

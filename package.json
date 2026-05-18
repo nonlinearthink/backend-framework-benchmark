@@ -12,6 +12,7 @@
         "build": "turbo run build",
         "dev": "turbo run dev",
         "start": "turbo run start",
+        "build:docker": "bun run scripts/build-docker.ts",
         "benchmark": "bun run scripts/benchmark.ts",
         "compare": "bun run scripts/serve-compare.ts"
     },
